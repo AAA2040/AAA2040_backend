@@ -10,11 +10,7 @@ public class HybridProcessingService {
 
     private final ExternalAudioProcessingService externalService;
 
-    public String startProcessing(String youtubeUrl) {
-        return externalService.startProcessing(youtubeUrl);
-    }
-
-    public ProcessingStatus getStatus(String taskId) {
-        return externalService.getStatus(taskId);
+    public ProcessingStatus startProcessing(String youtubeUrl) {
+        return externalService.startProcessingAndReturn(youtubeUrl);
     }
 }

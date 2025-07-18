@@ -1,7 +1,8 @@
 package com.example.miniproj.service;
 
 import com.example.miniproj.ProcessingStatusEnum;
-import com.example.miniproj.model.*;
+import com.example.miniproj.model.CallbackResponse;
+import com.example.miniproj.model.ProcessingStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,7 +16,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -25,122 +25,67 @@ import java.util.regex.Pattern;
 public class ExternalAudioProcessingService {
 
     private final RestTemplate restTemplate;
-    private final Map<String, ProcessingStatus> processingMap = new ConcurrentHashMap<>();
 
     @Value("${external.service.url}")
     private String externalServiceUrl;
 
-    @Value("${external.callback.base-url}")
-    private String callbackBaseUrl;
+    public ProcessingStatus startProcessingAndReturn(String youtubeUrl) {
+        log.info("[요청 시작] 외부 음원 분리: {}", youtubeUrl);
 
-    public String startProcessing(String youtubeUrl) {
-        String taskId = UUID.randomUUID().toString();
-
-        log.info("[시작] Processing 시작: taskId={}, youtubeUrl={}", taskId, youtubeUrl);
-
-        ProcessingStatus status = new ProcessingStatus();
-        status.setTaskId(taskId);
-        status.setStatus(ProcessingStatusEnum.PENDING);
-        status.setProgress(0);
-        processingMap.put(taskId, status);
-
-        String callbackUrl = callbackBaseUrl + "/api/callback/" + taskId;
-
-        Map<String, String> body = Map.of(
-                "url", youtubeUrl,
-                "callbackUrl", callbackUrl
-        );
+        Map<String, String> body = Map.of("url", youtubeUrl);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         HttpEntity<Map<String, String>> request = new HttpEntity<>(body, headers);
 
-        log.info("[요청] 외부 서비스 호출: url={}, callbackUrl={}", externalServiceUrl, callbackUrl);
-
         try {
-            restTemplate.postForEntity(externalServiceUrl, request, Void.class);
-            log.info("[요청 성공] 외부 서비스 요청 완료: taskId={}", taskId);
+            ResponseEntity<CallbackResponse> response = restTemplate.postForEntity(
+                    externalServiceUrl,
+                    request,
+                    CallbackResponse.class
+            );
+
+            CallbackResponse callback = response.getBody();
+            if (callback == null || !"success".equalsIgnoreCase(callback.getResult())) {
+                throw new RuntimeException("외부 서비스 처리 실패 또는 응답 없음");
+            }
+
+            String taskId = callback.getUriId();
+            String lyrics = callback.getLyrics();
+
+            if (lyrics != null && !lyrics.isBlank()) {
+                saveLyricsToVtt(taskId, lyrics);
+            }
+
+            ProcessingStatus result = new ProcessingStatus();
+            result.setTaskId(taskId);
+            result.setStatus(ProcessingStatusEnum.COMPLETED);
+            result.setMrPath(callback.getNoVocalsUrl());
+            result.setVocalsPath(callback.getVocalsUrl());
+            result.setSubtitlePath("/api/download/" + taskId + "/subtitle");
+
+            // ➕ 가사 필드 세팅
+            result.setLyrics(lyrics != null ? lyrics : "");
+
+            return result;
+
         } catch (Exception e) {
-            status.setStatus(ProcessingStatusEnum.ERROR);
-            status.setError("외부 서비스 요청 실패: " + e.getMessage());
-            log.error("[에러] 외부 서비스 요청 실패: taskId={}, error={}", taskId, e.getMessage(), e);
+            log.error("[에러] 외부 서비스 요청 실패: {}", e.getMessage(), e);
             throw new RuntimeException("외부 서비스 요청 실패", e);
         }
-
-        return taskId;
     }
 
-    public ProcessingStatus getStatus(String taskId) {
-        ProcessingStatus status = processingMap.get(taskId);
-        if (status == null) {
-            log.warn("[조회 실패] 존재하지 않는 taskId: {}", taskId);
-        } else {
-            log.debug("[조회] taskId={} 현재 상태: {}", taskId, status.getStatus());
+    private void saveLyricsToVtt(String taskId, String lyrics) {
+        try {
+            List<String> vttLines = convertToVtt(lyrics);
+            Path outputDir = Paths.get("data", "subtitles");
+            Files.createDirectories(outputDir);
+            Path vttPath = outputDir.resolve(taskId + ".vtt");
+            Files.write(vttPath, vttLines, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            log.error("자막 저장 실패: {}", e.getMessage(), e);
         }
-        return status;
     }
-
-    public void updateStatusFromCallback(String taskId, CallbackResponse response) {
-        ProcessingStatus status = processingMap.get(taskId);
-        if (status == null) {
-            log.warn("[콜백 무시] 등록되지 않은 taskId: {}", taskId);
-            return;
-        }
-
-        log.info("[콜백 수신] taskId={}, result={}, noVocalsUrl={}, lyricsSize={}",
-                taskId, response.getResult(), response.getNoVocalsUrl(),
-                response.getLyrics() != null ? response.getLyrics().length() : 0);
-
-        status.setStatus(ProcessingStatusEnum.COMPLETED);
-        status.setMrPath(response.getNoVocalsUrl());
-
-        String lyrics = response.getLyrics();
-        if (lyrics != null && !lyrics.isBlank()) {
-            try {
-                String fileName = taskId + ".vtt";
-                Path outputDir = Paths.get("data", "subtitles");
-                Files.createDirectories(outputDir);
-                Path vttPath = outputDir.resolve(fileName);
-
-                log.info("[자막 변환] VTT 변환 시작: taskId={}, 저장 경로={}", taskId, vttPath);
-
-                List<String> vttLines = convertToVtt(lyrics);
-                Files.write(vttPath, vttLines, StandardCharsets.UTF_8);
-
-                status.setSubtitlePath("/api/download/" + taskId + "/subtitle");
-
-                log.info("[자막 저장 완료] taskId={}, 라인 수={}", taskId, vttLines.size());
-            } catch (IOException e) {
-                String errorMsg = "자막 파일 저장 실패: " + e.getMessage();
-                status.setError(errorMsg);
-                log.error("[에러] " + errorMsg, e);
-            }
-        } else {
-            log.warn("[자막 없음] 콜백에 가사(lyrics)가 포함되지 않음: taskId={}", taskId);
-        }
-
-        status.setError(null);
-    }
-
-    // ... 생략된 기존 코드 ...
-
-    public CallbackResponse getCallbackStatus(String taskId) {
-        ProcessingStatus status = processingMap.get(taskId);
-        if (status == null) {
-            log.warn("[상태 조회 실패] 존재하지 않는 taskId: {}", taskId);
-            return null;
-        }
-
-        CallbackResponse response = new CallbackResponse();
-        response.setResult(status.getStatus().name());
-        response.setNoVocalsUrl(status.getMrPath());
-        response.setLyrics(null); // lyrics 파일에서 불러올 수도 있음
-
-        log.info("[상태 반환] taskId={}, result={}, noVocalsUrl={}", taskId, response.getResult(), response.getNoVocalsUrl());
-        return response;
-    }
-
-
 
     private List<String> convertToVtt(String lyrics) {
         List<String> lines = new ArrayList<>();
@@ -160,8 +105,6 @@ public class ExternalAudioProcessingService {
             lines.add(text);
             lines.add("");
         }
-
-        log.debug("[VTT 변환] 총 {}개의 자막 항목 생성됨", index - 1);
         return lines;
     }
 
