@@ -1,4 +1,4 @@
-YouTube Audio & Lyrics Separation SPA
+YouTube Audio & Lyrics Separation 
 
 > YouTube URL 하나로 MR(무반주)·보컬 트랙 분리와 타임싱크 자막(VTT)을 제공하는 풀스택 싱글 페이지 애플리케이션
 
