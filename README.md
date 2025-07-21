@@ -59,37 +59,7 @@ MiniProj는 사용자가 YouTube 영상 URL을 입력하면, 백엔드가 해당
 
 ---
 
-## 🔧 빠른 시작
 
-### 1. 프론트엔드 빌드
-
-```bash
-cd frontend
-npm install
-npm run build
-# → 결과물이 ../src/main/resources/static/ 아래로 복사되어야 합니다.
-```
-
-### 2. 백엔드 빌드 & 실행
-
-```bash
-# 프로젝트 루트
-mvn clean package
-# 또는
-gradle clean bootJar
-
-# 생성된 JAR 실행
-java -jar target/miniproj.jar
-```
-
-### 3. 옵션: Docker로 실행
-
-```bash
-docker build -t miniproj .
-docker run -p 9003:9003 miniproj
-```
-
----
 
 ## 🌐 API 명세
 
