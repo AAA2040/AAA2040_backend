@@ -1,4 +1,4 @@
- MiniProj: YouTube Audio & Lyrics Separation SPA
+ YouTube Audio & Lyrics Separation SPA
 
 > YouTube URL 하나로 MR(무반주)·보컬 트랙 분리와 타임싱크 자막(VTT)을 제공하는 풀스택 싱글페이지 애플리케이션
 
@@ -6,7 +6,13 @@
 
 ## 🚀 프로젝트 개요
 
-MiniProj는 사용자가 YouTube 영상 URL을 입력하면, 백엔드가 해당 URL을 외부 음원 분리 & 가사 추출 API로 전달하고, 반환된 보컬·반주 트랙 URL과 원본 가사를 JSON으로 응답하며, 동시에 타임싱크 자막(.vtt) 파일을 생성하여 프론트엔드에 서빙하는 애플리케이션입니다.
+이번 프로젝트는 사용자가 YouTube 영상 URL만 입력하면, 백엔드가 자동으로 MR(무반주)과 보컬 트랙을 분리하고, 동시에 타임싱크된 가사를 제공하는 풀스택 애플리케이션을 목표로 합니다. 프론트엔드는 Next.js로 개발해 정적 파일로 export(`npm run build`)한 뒤, Spring Boot의 `src/main/resources/static` 디렉터리에 포함시켜 배포합니다. 이 덕분에 별도의 CDN이나 정적 서버 없이도 하나의 JAR 파일만으로 완전한 SPA(싱글 페이지 애플리케이션)를 서빙할 수 있습니다.
+
+백엔드 핵심 로직은 `AudioProcessingService`라는 단일 서비스 클래스로 집중되었습니다. 이 서비스는 전달받은 YouTube URL의 유효성을 즉시 검증하고, `RestTemplate`을 통해 외부 음원 분리 API에 POST 요청을 보냅니다. 외부 서비스는 JSON 형태의 `CallbackResponse`를 반환하며, 이 응답에는 태스크 식별자(`uriId`), MR URL, 보컬 URL, 그리고 원본 가사(`lyrics`)가 담겨 있습니다. 서비스는 이 값을 `ProcessingStatus`라는 DTO로 매핑해, 클라이언트가 필요로 하는 핵심 정보만 깔끔하게 묶어 반환합니다.
+
+컨트롤러에서는 복잡한 매핑 로직을 모두 생략하고, `ProcessingStatus` 객체를 그대로 JSON으로 반환하도록 구현했습니다. 이를 통해 매핑 코드가 대폭 간소화되었고, 잘못된 키 이름이나 누락 위험이 사라졌습니다. 또한, DTO 필드 중 실제로 사용하지 않는 `progress`, `error`, `videoTitle`, `subtitlePath`는 모두 제거해, 응답 페이로드를 최소화하고 코드의 가독성을 높였습니다.
+
+SPA 라우팅은 Spring MVC 설정 한 줄로 해결했습니다. 모든 “점(dot)”이 포함되지 않은 경로 요청을 `index.html`로 포워딩하도록 `@RequestMapping({"/", "/{path:[^.]+}", "/**/{path:[^.]+}"})` 어노테이션을 사용했으며, `/api/**` 경로만 예외로 처리해 API 호출과 클라이언트 라우팅이 충돌 없이 공존합니다.
 
 - **프론트엔드**: Next.js → `npm run build` → Spring Boot `src/main/resources/static`  
 - **백엔드**: Spring Boot + RestTemplate  
