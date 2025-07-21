@@ -2,7 +2,7 @@ package com.example.miniproj.controller;
 
 import com.example.miniproj.model.ProcessRequest;
 import com.example.miniproj.model.ProcessingStatus;
-import com.example.miniproj.service.AudioProcessingService;
+import com.example.miniproj.service.HybridProcessingService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpHeaders;
@@ -19,41 +19,32 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api")
 @RequiredArgsConstructor
-public class AudioController{
+public class AudioController {
 
-        private final AudioProcessingService audioService;
+    private final HybridProcessingService hybridService;
 
-        @PostMapping("/process")
-        public ResponseEntity<ProcessingStatus> process(@RequestBody ProcessRequest request) {
-            ProcessingStatus status = audioService.startProcessing(request.getUrl());
-            return ResponseEntity.ok(status);
+    @PostMapping("/process")
+    public ResponseEntity<?> process(@RequestBody ProcessRequest request) {
+        if (request.getUrl() == null || request.getUrl().isBlank()) {
+            return ResponseEntity.badRequest().body(
+                    Map.of("result", "error", "message", "유효하지 않은 URL입니다."));
         }
 
+        try {
+            ProcessingStatus status = hybridService.startProcessing(request.getUrl());
 
-//    private final HybridProcessingService hybridService;
-//
-//    @PostMapping("/process")
-//    public ResponseEntity<?> process(@RequestBody ProcessRequest request) {
-//        if (request.getUrl() == null || request.getUrl().isBlank()) {
-//            return ResponseEntity.badRequest().body(
-//                    Map.of("result", "error", "message", "유효하지 않은 URL입니다."));
-//        }
-//
-//        try {
-//            ProcessingStatus status = hybridService.startProcessing(request.getUrl());
-//
-//            return ResponseEntity.ok(Map.of(
-//                    "result", "success",
-//                    "uriId", status.getTaskId(),
-//                    "no_vocals_url", status.getMrPath(),
-//                    "vocals_url", status.getVocalsPath(),
-//                    "lyrics", status.getLyrics()   // ➕ 가사 포함
-//            ));
-//        } catch (Exception e) {
-//            return ResponseEntity.internalServerError().body(
-//                    Map.of("result", "error", "message", e.getMessage()));
-//        }
-//    }
+            return ResponseEntity.ok(Map.of(
+                    "result", "success",
+                    "uriId", status.getTaskId(),
+                    "no_vocals_url", status.getMrPath(),
+                    "vocals_url", status.getVocalsPath(),
+                    "lyrics", status.getLyrics()   // ➕ 가사 포함
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(
+                    Map.of("result", "error", "message", e.getMessage()));
+        }
+    }
 
     @GetMapping("/result/{taskId}/lyrics")
     public ResponseEntity<String> getLyrics(@PathVariable String taskId) {

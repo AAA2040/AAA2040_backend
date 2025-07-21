@@ -2,6 +2,7 @@ package com.example.miniproj.service;
 
 import com.example.miniproj.model.ProcessingStatus;
 import com.example.miniproj.model.CallbackResponse;
+import com.example.miniproj.ProcessingStatusEnum;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
